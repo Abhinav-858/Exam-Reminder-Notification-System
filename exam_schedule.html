@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Interactive Exam Scheduler</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        max-width: 900px;
+        margin: 30px auto;
+    }
+    input, button {
+        padding: 8px;
+        margin: 6px 0;
+        width: 100%;
+    }
+    button {
+        cursor: pointer;
+    }
+    .row {
+        display: flex;
+        gap: 10px;
+    }
+    .row button {
+        width: auto;
+    }
+    .exam-item {
+        background: #f9f9f9;
+        padding: 12px;
+        margin-top: 10px;
+        border-radius: 6px;
+    }
+    .alert {
+        margin-top: 8px;
+        padding: 8px;
+        font-weight: bold;
+        border-radius: 4px;
+    }
+    .completed { background: #f8d7da; }
+    .today { background: #ffeeba; }
+    .soon { background: #fff3cd; }
+    .upcoming { background: #d1ecf1; }
+    .actions button {
+        margin-right: 5px;
+    }
+    textarea {
+        width: 100%;
+        height: 120px;
+        margin-top: 10px;
+    }
+</style>
+</head>
+
+<body>
+
+<h1>📚  Exam Scheduler</h1>
+
+<h3>Add / Edit Exam</h3>
+<input type="text" id="subjectInput" placeholder="Subject">
+<input type="date" id="dateInput">
+<button onclick="saveExam()">Save Exam</button>
+
+<hr>
+
+<h3>Exam List</h3>
+<div id="examList"></div>
+
+<hr>
+
+<h3>Reminder Log</h3>
+<textarea id="logArea" readonly></textarea>
+<button onclick="downloadLog()">Download Log</button>
+<button onclick="clearLog()">Clear Log</button>
+
+<script>
+let exams = JSON.parse(localStorage.getItem("exams")) || [];
+let editIndex = null;
+
+
+function logReminder(message) {
+    let logs = localStorage.getItem("reminder_log") || "";
+    logs += message + "\n";
+    localStorage.setItem("reminder_log", logs);
+    document.getElementById("logArea").value = logs;
+}
+
+function saveExam() {
+    const subject = subjectInput.value.trim();
+    const date = dateInput.value;
+
+    if (!subject || !date) {
+        alert("Please fill all fields");
+        return;
+    }
+
+    if (editIndex !== null) {
+        exams[editIndex] = { subject, examDate: date };
+        editIndex = null;
+    } else {
+        exams.push({ subject, examDate: date });
+    }
+
+    subjectInput.value = "";
+    dateInput.value = "";
+
+    localStorage.setItem("exams", JSON.stringify(exams));
+    renderExams();
+}
+
+function deleteExam(index) {
+    if (!confirm("Delete this exam?")) return;
+    exams.splice(index, 1);
+    localStorage.setItem("exams", JSON.stringify(exams));
+    renderExams();
+}
+function saveExam() {
+    const subject = subjectInput.value.trim();
+    const date = dateInput.value;
+
+    if (!subject || !date) {
+        alert("Please fill all fields");
+        return;
+    }
+
+    fetch("http://localhost:8080/yourApp/exams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject, examDate: date })
+    })
+    .then(res => res.json())
+    .then(data => {
+        logReminder(data.alert);
+        loadExams();
+    });
+
+    subjectInput.value = "";
+    dateInput.value = "";
+}
+
+function editExam(index) {
+    subjectInput.value = exams[index].subject;
+    dateInput.value = exams[index].examDate;
+    editIndex = index;
+}
+
+function renderExams() {
+    const list = document.getElementById("examList");
+    list.innerHTML = "";
+
+    const today = new Date();
+
+    exams.sort((a, b) => new Date(a.examDate) - new Date(b.examDate));
+
+    exams.forEach((exam, i) => {
+        const examDate = new Date(exam.examDate);
+        const daysLeft = Math.floor(
+            (examDate - new Date(today.getFullYear(), today.getMonth(), today.getDate()))
+            / (1000 * 60 * 60 * 24)
+        );
+
+        let text, cls;
+        if (daysLeft < 0) {
+            text = "Completed";
+            cls = "completed";
+        } else if (daysLeft === 0) {
+            text = "🚨 Today";
+            cls = "today";
+        } else if (daysLeft <= 3) {
+            text = `⚠ In ${daysLeft} day(s)`;
+            cls = "soon";
+        } else {
+            text = "Upcoming";
+            cls = "upcoming";
+        }
+
+        logReminder(`${text}: ${exam.subject} (${exam.examDate})`);
+
+        const div = document.createElement("div");
+        div.className = "exam-item";
+        div.innerHTML = `
+            <strong>${exam.subject}</strong><br>
+            Date: ${exam.examDate} <br>
+            Status: <span class="alert ${cls}">${text}</span>
+            <div class="actions">
+                <button onclick="editExam(${i})">Edit</button>
+                <button onclick="deleteExam(${i})">Delete</button>
+            </div>
+        `;
+        list.appendChild(div);
+    });
+}
+function loadExams() {
+    fetch("http://localhost:8080/yourApp/exams")
+        .then(res => res.json())
+        .then(data => {
+            exams = data;
+            renderExams();
+        });
+}
+
+function downloadLog() {
+    const logs = localStorage.getItem("reminder_log") || "";
+    const blob = new Blob([logs], { type: "text/plain" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "reminder_log.txt";
+    link.click();
+}
+
+function clearLog() {
+    if (confirm("Clear all logs?")) {
+        localStorage.removeItem("reminder_log");
+        document.getElementById("logArea").value = "";
+    }
+}
+
+document.getElementById("logArea").value =
+    localStorage.getItem("reminder_log") || "";
+loadExams();
+
+
+</script>
+
+</body>
+</html>
